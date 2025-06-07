@@ -48,25 +48,34 @@ const int FIRE_COOLDOWN_MS = 200;
 struct Point { int x, y; };
 struct Room {
     int x, y, width, length;
-    bool intersects(const Room& other) const { return (x < other.x + other.width && x + width > other.x && y < other.y + other.length && y + length > other.y); }
+    bool intersects(const Room& other) const { 
+        return (x < other.x + other.width && x + width > other.x 
+            && y < other.y + other.length && y + length > other.y); 
+    }
     Point center() const { return {x + width / 2, y + length / 2}; }
 };
 std::vector<Point> spawn_points;
 
 void create_h_tunnel(int x1, int x2, int z) {
     for (int x = std::min(x1, x2); x <= std::max(x1, x2); x++) {
-        if (game_map[x][z] == WALL) { game_map[x][z] = FLOOR; spawn_points.push_back({x, z}); }
+        if (game_map[x][z] == WALL) { 
+            game_map[x][z] = FLOOR; spawn_points.push_back({x, z});
+        }
     }
 }
 void create_v_tunnel(int z1, int z2, int x) {
     for (int z = std::min(z1, z2); z <= std::max(z1, z2); z++) {
-        if (game_map[x][z] == WALL) { game_map[x][z] = FLOOR; spawn_points.push_back({x, z}); }
+        if (game_map[x][z] == WALL) { 
+            game_map[x][z] = FLOOR; spawn_points.push_back({x, z}); 
+        }
     }
 }
 void generate_map() {
     spawn_points.clear();
     for (int x = 0; x < MAP_WIDTH; x++) {
-        for (int y = 0; y < MAP_LENGTH; y++) { game_map[x][y] = WALL; }
+        for (int y = 0; y < MAP_LENGTH; y++) { 
+            game_map[x][y] = WALL; 
+        }
     }
     std::vector<Room> rooms;
     int max_rooms = 10;
@@ -83,7 +92,9 @@ void generate_map() {
         if (!failed) {
             for (int rx = new_room.x; rx < new_room.x + new_room.width; rx++) {
                 for (int ry = new_room.y; ry < new_room.y + new_room.length; ry++) {
-                    if (game_map[rx][ry] == WALL) { game_map[rx][ry] = FLOOR; spawn_points.push_back({rx, ry}); }
+                    if (game_map[rx][ry] == WALL) { 
+                        game_map[rx][ry] = FLOOR; spawn_points.push_back({rx, ry}); 
+                    }
                 }
             }
             if (!rooms.empty()) {
@@ -122,19 +133,13 @@ bool check_line_sphere_collision(const glm::vec3& line_start, const glm::vec3& l
 
     float line_len_sq = glm::dot(line_dir, line_dir);
     if (line_len_sq == 0.0f) {
-    return glm::length(to_sphere) < sphere_radius;
+        return glm::length(to_sphere) < sphere_radius;
     }
 
-    // Proiectăm vectorul de la începutul liniei la centrul sferei pe linia însăși
     float t = glm::dot(to_sphere, line_dir) / line_len_sq;
-
-    // Limităm proiecția la segmentul de linie (între 0 și 1)
     t = glm::clamp(t, 0.0f, 1.0f);
-
-    // Găsim cel mai apropiat punct de pe segmentul de linie față de centrul sferei
     glm::vec3 closest_point = line_start + t * line_dir;
 
-    // Verificăm dacă distanța de la acest punct la centrul sferei este mai mică decât raza
     return glm::distance(closest_point, sphere_center) < sphere_radius;
 }
 
@@ -200,7 +205,7 @@ void update_projectiles(float dt) {
                     client.state.is_alive = 0;
                     client.respawn_time = Clock::now() + std::chrono::seconds(3);
                     projectiles[i].is_active = false;
-                    cout << "Player " << id << " was hit by precise collision!" << endl;
+                    cout << "Player " << id << " was hit!" << endl;
                     break;
                 }
             }
@@ -262,7 +267,7 @@ int main(int argc, char *argv[]) {
                         ClientInfo new_client;
                         new_client.addr = client_addr;
                         new_client.state.player_id = new_id;
-                        respawn_player(new_client); // Folosim funcția de respawn pentru a seta starea inițială
+                        respawn_player(new_client);
                         new_client.last_fire_time = Clock::now();
                         clients[new_id] = new_client;
                         JoinAckPacket pkt;

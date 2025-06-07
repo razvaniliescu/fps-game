@@ -27,7 +27,7 @@ using Clock = std::chrono::steady_clock;
 int game_map[MAP_WIDTH][MAP_LENGTH];
 auto last_fire_time = Clock::now();
 float cameraYaw   = 0.0f;
-float cameraPitch = 0.0f; // Pornim cu privirea dreaptă
+float cameraPitch = 0.0f;
 double lastMouseX, lastMouseY;
 bool firstMouse = true;
 const float PLAYER_RADIUS = 0.3f;
@@ -119,7 +119,6 @@ void draw_minimap(const StatePacket& state, uint32_t self_id) {
 }
 
 void draw_crosshair() {
-    // --- Pregătirea pentru randare 2D peste scena 3D ---
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -128,19 +127,14 @@ void draw_crosshair() {
     GLFWwindow* window = glfwGetCurrentContext();
     glfwGetWindowSize(window, &window_width, &window_height);
 
-    // Setăm o proiecție 2D unde coordonatele corespund pixelilor ferestrei
     glOrtho(0.0, window_width, 0.0, window_height, -1.0, 1.0);
 
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
     glLoadIdentity();
 
-    // Dezactivăm testarea adâncimii pentru ca crosshair-ul să fie mereu deasupra
     glDisable(GL_DEPTH_TEST);
 
-    // --- Desenarea crosshair-ului ---
-
-    // Calculăm centrul exact al ferestrei
     float center_x = window_width / 2.0f;
     float center_y = window_height / 2.0f;
     float size = 10.0f;
@@ -183,7 +177,7 @@ void renderGL(const StatePacket& state, uint32_t self_id, float playerX, float p
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
 
     glm::vec3 playerPos = glm::vec3(playerX, playerY, playerZ);
-    glm::vec3 playerEyePos = playerPos + glm::vec3(0.0f, 0.3f, 0.0f);
+    glm::vec3 playerEyePos = playerPos + glm::vec3(0.0f, 0.3f, 0.0f); // Camera offset
     glm::vec3 cameraFront;
     cameraFront.x = cos(glm::radians(cameraYaw)) * cos(glm::radians(cameraPitch));
     cameraFront.y = sin(glm::radians(cameraPitch));
@@ -280,11 +274,11 @@ int main(int argc, char *argv[]) {
 
     std::cout << "Waiting for server to assign ID...\n";
     JoinAckPacket ack_pkt{};
-    fcntl(sockfd, F_SETFL, flags & ~O_NONBLOCK); // Temporar blocant pentru a primi pachetele de start
+    fcntl(sockfd, F_SETFL, flags & ~O_NONBLOCK);
     recvfrom(sockfd, &ack_pkt, sizeof(ack_pkt), 0, nullptr, nullptr);
     MapPacket map_pkt;
     recvfrom(sockfd, &map_pkt, sizeof(map_pkt), 0, nullptr, nullptr);
-    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK); // Revenim la non-blocant
+    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
 
     uint32_t self_id = ack_pkt.your_id;
     if (map_pkt.hdr.type == MAP_DATA) {
@@ -310,7 +304,7 @@ int main(int argc, char *argv[]) {
             ActionPacket pkt{};
             pkt.hdr.type = ACT;
             pkt.hdr.tick_id = tick_id++;
-            pkt.view_dir = view_dir_3d; // MODIFICAT: Trimitem vectorul 3D complet
+            pkt.view_dir = view_dir_3d;
             pkt.movement_dir = get_movement_dir(window);
             
             bool isFiring = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
