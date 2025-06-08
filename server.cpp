@@ -29,6 +29,8 @@ struct ClientInfo {
     PlayerState state;
     Clock::time_point last_fire_time;
     Clock::time_point respawn_time;
+    Clock::time_point last_packet_time;
+    string client_key;
 };
 
 unordered_map<uint32_t, ClientInfo> clients;
@@ -44,8 +46,8 @@ const float PROJECTILE_SPEED = 25.0f;
 const float PLAYER_RADIUS = 0.3f;
 const float PROJECTILE_RADIUS = 0.05f;
 const int FIRE_COOLDOWN_MS = 200;
+const int CLIENT_TIMEOUT_S = 30;
 
-struct Point { int x, y; };
 struct Room {
     int x, y, width, length;
     bool intersects(const Room& other) const { 
@@ -269,6 +271,8 @@ int main(int argc, char *argv[]) {
                         new_client.state.player_id = new_id;
                         respawn_player(new_client);
                         new_client.last_fire_time = Clock::now();
+                        new_client.last_packet_time = Clock::now();
+                        new_client.client_key = client_key;
                         clients[new_id] = new_client;
                         JoinAckPacket pkt;
                         pkt.hdr.type = JOIN_ACK;
@@ -287,6 +291,7 @@ int main(int argc, char *argv[]) {
                             ActionPacket* pkt = (ActionPacket*)buf;
                             clients[id].state.movement_dir = pkt->movement_dir;
                             clients[id].state.view_dir = pkt->view_dir;
+                            clients[id].last_packet_time = Clock::now();
                             auto now = Clock::now();
                             if (pkt->is_firing && clients[id].state.is_alive &&
                                 chrono::duration_cast<chrono::milliseconds>(now - clients[id].last_fire_time).count() >= FIRE_COOLDOWN_MS) {
@@ -294,18 +299,46 @@ int main(int argc, char *argv[]) {
                                 glm::vec3 spawn_pos = clients[id].state.pos;
                                 spawn_pos.y += 0.2f; // Eye height offset
                                 spawn_projectile(id, spawn_pos, pkt->view_dir);
+
+                                SoundEventPacket sound_pkt;
+                                sound_pkt.hdr.type = SOUND_EVENT;
+                                sound_pkt.sound_type = GUNSHOT;
+                                sound_pkt.pos = spawn_pos;
+
+                                for (auto const& [pid, p_client] : clients) {
+                                    sendto(udp_socket, &sound_pkt, sizeof(sound_pkt), 0, (sockaddr*)&p_client.addr, sizeof(p_client.addr));
+                                }
                             }
                         }
+                    }
+                } else if (hdr->type == LEAVE) {
+                    if (addr_to_id.count(client_key)) {
+                        uint32_t id = addr_to_id[client_key];
+                        cout << "Player " << id << " has left the game." << endl;
+                        clients.erase(id);
+                        addr_to_id.erase(client_key);
                     }
                 }
             }
         }
         auto current_time = Clock::now();
-
         auto elapsed_ms = chrono::duration_cast<chrono::milliseconds>(current_time - last_tick_time).count();
         if (elapsed_ms >= tick_interval_ms) {
             last_tick_time = current_time;
             float dt = elapsed_ms / 1000.0f;
+            std::vector<uint32_t> timed_out_ids;
+            for (auto const& [id, client] : clients) {
+                if (chrono::duration_cast<chrono::seconds>(current_time - client.last_packet_time).count() > CLIENT_TIMEOUT_S) {
+                    timed_out_ids.push_back(id);
+                }
+            }
+
+            for (uint32_t id : timed_out_ids) {
+                cout << "Player " << id << " timed out. Removing." << endl;
+                addr_to_id.erase(clients[id].client_key);
+                clients.erase(id);
+            }
+
             for (auto& [id, client] : clients) {
                 if (!client.state.is_alive && current_time >= client.respawn_time) {
                     respawn_player(client);

@@ -9,12 +9,14 @@
 #define MAP_WIDTH 40
 #define MAP_LENGTH 40
 
-enum PacketType : uint8_t {
-    JOIN = 0,
-    JOIN_ACK = 1,
-    ACT = 2,
-    STATE = 3,
-    MAP_DATA = 4
+enum PacketType {
+    JOIN,
+    JOIN_ACK,
+    ACT,
+    STATE,
+    MAP_DATA,
+    SOUND_EVENT,
+    LEAVE
 };
 
 enum MovementDirection : uint8_t {
@@ -34,7 +36,16 @@ enum TileType : uint8_t {
     FLOOR = 1
 };
 
+enum SoundType {
+    GUNSHOT,
+    FOOTSTEPS
+};
+
 #pragma pack(push, 1)
+struct Point { 
+    int x, y;
+};
+
 struct ProtoHeader {
     uint8_t type;
     uint32_t tick_id;
@@ -79,6 +90,12 @@ struct StatePacket {
 struct MapPacket {
     ProtoHeader hdr;
     int map[MAP_WIDTH][MAP_LENGTH];
+};
+
+struct SoundEventPacket {
+    ProtoHeader hdr;
+    SoundType sound_type;
+    glm::vec3 pos;
 };
 #pragma pack(pop)
 

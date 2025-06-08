@@ -14,7 +14,7 @@ $(SERVER_BIN): $(SERVER_SRC) $(HEADERS)
 	$(CXX) $(CXXFLAGS) $(SERVER_SRC) -o $(SERVER_BIN)
 
 $(CLIENT_BIN): $(CLIENT_SRC) $(HEADERS)
-	$(CXX) $(CXXFLAGS) $(CLIENT_SRC) -o $(CLIENT_BIN) -lglfw -lGL -lm
+	$(CXX) $(CXXFLAGS) $(CLIENT_SRC) -o $(CLIENT_BIN) -lglfw -lGL -lm -lopenal -lsndfile
 
 .PHONY: clean
 clean:
