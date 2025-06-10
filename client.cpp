@@ -31,8 +31,8 @@
 
 using Clock = std::chrono::steady_clock;
 
-int game_map[MAP_WIDTH][MAP_LENGTH];
-int sound_distance_map[MAP_WIDTH][MAP_LENGTH];
+int game_map[MAP_WIDTH][MAP_HEIGHT][MAP_LENGTH];
+float sound_distance_map[MAP_WIDTH][MAP_HEIGHT][MAP_LENGTH];
 auto last_fire_time = Clock::now();
 float cameraYaw   = 0.0f;
 float cameraPitch = 0.0f;
@@ -44,6 +44,16 @@ ALCdevice* audio_device;
 ALCcontext* audio_context;
 std::unordered_map<SoundType, ALuint> sound_buffers;
 GLuint pistol_texture;
+GLuint player_texture;
+
+struct PathNode {
+    float cost;
+    glm::ivec3 pos;
+
+    bool operator>(const PathNode& other) const {
+        return cost > other.cost;
+    }
+};
 
 GLuint load_texture(const char* filename) {
     GLuint texture_id;
@@ -129,41 +139,57 @@ void init_audio() {
     }
 
     sound_buffers[GUNSHOT] = load_sound("assets/gunshot.wav");
-    // sound_buffers[FOOTSTEPS] = load_sound("assets/footstep.wav");
+    sound_buffers[FOOTSTEP] = load_sound("assets/footstep.wav");
 }
 
-void calculate_sound_map(int start_x, int start_z) {
+void calculate_sound_map(glm::vec3 start_pos) {
     for (int x = 0; x < MAP_WIDTH; ++x) {
-        for (int y = 0; y < MAP_LENGTH; ++y) {
-            sound_distance_map[x][y] = -1;
+        for (int y = 0; y < MAP_HEIGHT; ++y) {
+            for (int z = 0; z < MAP_LENGTH; ++z) {
+                sound_distance_map[x][y][z] = std::numeric_limits<float>::max();
+            }
         }
     }
+    
+    glm::ivec3 start_node = {(int)start_pos.x, (int)start_pos.y, (int)start_pos.z};
 
-    if (start_x < 0 || start_x >= MAP_WIDTH || start_z < 0 || start_z >= MAP_LENGTH || game_map[start_x][start_z] == WALL) {
+    if (start_node.x < 0 || start_node.x >= MAP_WIDTH || start_node.y < 0 || start_node.y >= MAP_HEIGHT || start_node.z < 0 || start_node.z >= MAP_LENGTH) {
         return;
     }
 
-    std::queue<Point> q;
-    
-    q.push({start_x, start_z});
-    sound_distance_map[start_x][start_z] = 0;
+    std::priority_queue<PathNode, std::vector<PathNode>, std::greater<PathNode>> pq;
 
-    int dx[] = {-1, 1, 0, 0};
-    int dz[] = {0, 0, -1, 1};
+    sound_distance_map[start_node.x][start_node.y][start_node.z] = 0.0f;
+    pq.push({0.0f, start_node});
 
-    while (!q.empty()) {
-        Point current = q.front();
-        q.pop();
+    int d[] = {-1, 1, 0, 0, 0, 0};
+    int d_len = sizeof(d) / sizeof(int);
 
-        for (int i = 0; i < 4; ++i) {
-            int nx = current.x + dx[i];
-            int nz = current.y + dz[i];
+    while (!pq.empty()) {
+        PathNode current = pq.top();
+        pq.pop();
 
-            if (nx >= 0 && nx < MAP_WIDTH && nz >= 0 && nz < MAP_LENGTH && 
-                game_map[nx][nz] == FLOOR && sound_distance_map[nx][nz] == -1) 
+        if (current.cost > sound_distance_map[current.pos.x][current.pos.y][current.pos.z]) {
+            continue;
+        }
+
+        for (int i = 0; i < d_len; ++i) {
+            glm::ivec3 neighbor_pos = {current.pos.x + d[i], current.pos.y + d[(i+2)%d_len], current.pos.z + d[(i+4)%d_len]};
+
+            if (neighbor_pos.x >= 0 && neighbor_pos.x < MAP_WIDTH &&
+                neighbor_pos.y >= 0 && neighbor_pos.y < MAP_HEIGHT &&
+                neighbor_pos.z >= 0 && neighbor_pos.z < MAP_LENGTH)
             {
-                sound_distance_map[nx][nz] = sound_distance_map[current.x][current.y] + 1;
-                q.push({nx, nz});
+                float move_cost = 1.0f; // Cost standard pentru a trece prin aer
+                if (game_map[neighbor_pos.x][neighbor_pos.y][neighbor_pos.z] == SOLID) {
+                }
+
+                float new_cost = current.cost + move_cost;
+
+                if (new_cost < sound_distance_map[neighbor_pos.x][neighbor_pos.y][neighbor_pos.z]) {
+                    sound_distance_map[neighbor_pos.x][neighbor_pos.y][neighbor_pos.z] = new_cost;
+                    pq.push({new_cost, neighbor_pos});
+                }
             }
         }
     }
@@ -192,66 +218,98 @@ void draw_cube(float x, float y, float z, float height) {
 
 void draw_sphere(float radius, int sectors, int stacks) {
     for(int i = 0; i < stacks; ++i) {
-        float phi1 = M_PI * ((float)i / stacks);
-        float phi2 = M_PI * ((float)(i + 1) / stacks);
+        float v1 = (float)i / stacks;
+        float v2 = (float)(i + 1) / stacks;
+        
+        float phi1 = M_PI * v1;
+        float phi2 = M_PI * v2;
+
         glBegin(GL_QUAD_STRIP);
         for(int j = 0; j <= sectors; ++j) {
-            float theta = 2 * M_PI * ((float)j / sectors);
-            float x1 = radius * sin(phi1) * cos(theta); float y1 = radius * cos(phi1); float z1 = radius * sin(phi1) * sin(theta);
+            float u = (float)j / sectors;
+            float theta = 2 * M_PI * u;
+
+            float x1 = radius * sin(phi1) * cos(theta);
+            float y1 = radius * cos(phi1);
+            float z1 = radius * sin(phi1) * sin(theta);
+            glTexCoord2f(u, 1.0f - v1);
             glVertex3f(x1, y1, z1);
-            float x2 = radius * sin(phi2) * cos(theta); float y2 = radius * cos(phi2); float z2 = radius * sin(phi2) * sin(theta);
+
+            float x2 = radius * sin(phi2) * cos(theta);
+            float y2 = radius * cos(phi2);
+            float z2 = radius * sin(phi2) * sin(theta);
+            glTexCoord2f(u, 1.0f - v2);
             glVertex3f(x2, y2, z2);
         }
         glEnd();
     }
 }
 
-void draw_minimap(const StatePacket& state, uint32_t self_id) {
+void draw_minimap(const StatePacket& state, uint32_t self_id, float player_y) {
     glPushAttrib(GL_VIEWPORT_BIT | GL_ENABLE_BIT);
     glMatrixMode(GL_PROJECTION); glPushMatrix();
     glMatrixMode(GL_MODELVIEW); glPushMatrix();
+
     glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     int window_width, window_height;
     GLFWwindow* window = glfwGetCurrentContext();
     glfwGetWindowSize(window, &window_width, &window_height);
+
     int minimap_size = 200;
     glViewport(10, window_height - minimap_size - 10, minimap_size, minimap_size);
     glMatrixMode(GL_PROJECTION); glLoadIdentity();
     glOrtho(0, MAP_WIDTH, 0, MAP_LENGTH, -1, 1);
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
+
     glColor4f(0.1f, 0.1f, 0.1f, 0.7f);
-    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBegin(GL_QUADS);
         glVertex2f(0, 0); glVertex2f(MAP_WIDTH, 0); glVertex2f(MAP_WIDTH, MAP_LENGTH); glVertex2f(0, MAP_LENGTH);
     glEnd();
-    glDisable(GL_BLEND);
     glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_LINE_LOOP);
         glVertex2f(0, 0); glVertex2f(MAP_WIDTH, 0); glVertex2f(MAP_WIDTH, MAP_LENGTH); glVertex2f(0, MAP_LENGTH);
     glEnd();
+
     glColor3f(0.7f, 0.7f, 0.7f);
+    int current_level_y = (int)player_y;
+
+    if (current_level_y < 0) current_level_y = 0;
+    if (current_level_y >= MAP_HEIGHT) current_level_y = MAP_HEIGHT - 1;
+
     glBegin(GL_QUADS);
     for (int x = 0; x < MAP_WIDTH; x++) {
-        for (int y = 0; y < MAP_LENGTH; y++) {
-            if (game_map[x][y] == WALL) {
-                glVertex2f(x, y); glVertex2f(x + 1, y); glVertex2f(x + 1, y + 1); glVertex2f(x, y + 1);
+        for (int z = 0; z < MAP_LENGTH; z++) {
+            if (game_map[x][current_level_y][z] != AIR) {
+                glVertex2f(x, z); glVertex2f(x + 1, z); glVertex2f(x + 1, z + 1); glVertex2f(x, z + 1);
             }
         }
     }
     glEnd();
-    glPointSize(6.0f);
+
     glBegin(GL_POINTS);
     for (int i = 0; i < state.num_players; i++) {
         const PlayerState& p = state.players[i];
         if (!p.is_alive) continue;
-        if (p.player_id == self_id) { 
-            glColor3f(0.0f, 1.0f, 1.0f); 
-        } else { 
-            glColor3f(1.0f, 0.0f, 0.0f);
+
+        int other_player_level = (int)p.pos.y;
+        
+        if (other_player_level == current_level_y) {
+            glPointSize(6.0f);
+            if (p.player_id == self_id) { glColor3f(0.0f, 1.0f, 1.0f); }
+            else { glColor3f(1.0f, 0.0f, 0.0f); }
+        } else {
+            glPointSize(3.0f);
+            if (p.player_id == self_id) { glColor4f(0.0f, 1.0f, 1.0f, 0.5f); }
+            else { glColor4f(1.0f, 0.0f, 0.0f, 0.5f); }
         }
+        
         glVertex2f(p.pos.x, p.pos.z);
     }
     glEnd();
+    
     glMatrixMode(GL_PROJECTION); glPopMatrix();
     glMatrixMode(GL_MODELVIEW); glPopMatrix();
     glPopAttrib();
@@ -362,6 +420,7 @@ void renderGL(const StatePacket& state, uint32_t self_id, float playerX, float p
     glLoadMatrixf(glm::value_ptr(projection));
     glMatrixMode(GL_MODELVIEW); glLoadIdentity();
 
+    // Create the camera
     glm::vec3 playerPos = glm::vec3(playerX, playerY, playerZ);
     glm::vec3 playerEyePos = playerPos + glm::vec3(0.0f, 0.3f, 0.0f); // Camera offset
     glm::vec3 cameraFront;
@@ -374,19 +433,36 @@ void renderGL(const StatePacket& state, uint32_t self_id, float playerX, float p
     glLoadMatrixf(glm::value_ptr(view));
 
     for (int x = 0; x < MAP_WIDTH; x++) {
-        for (int y = 0; y < MAP_LENGTH; y++) {
-            if (game_map[x][y] == WALL) { draw_cube((float)x, 0.0f, (float)y, 3.0f); }
+        for (int y = 0; y < MAP_HEIGHT; y++) {
+            for (int z = 0; z < MAP_LENGTH; z++) {
+                if (game_map[x][y][z] == SOLID) {
+                    draw_cube((float)x, (float)y, (float)z, 1.0f); 
+                }
+            }
         }
     }
+
+    // Draw the players
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, player_texture);
+    glColor3f(1.0f, 1.0f, 1.0f);
+
     for (int i = 0; i < state.num_players; ++i) {
         const PlayerState& p = state.players[i];
         if (!p.is_alive || p.player_id == self_id) continue;
-        glColor3f(0.0f, 1.0f, 0.0f);
+    
         glPushMatrix();
         glTranslatef(p.pos.x, p.pos.y - 0.2f, p.pos.z);
-        draw_sphere(PLAYER_RADIUS, 12, 12);
+        
+        float angle_y = -atan2(p.view_dir.z, p.view_dir.x) * 180.0f / M_PI + 90.0f;
+        glRotatef(angle_y, 0.0f, 1.0f, 0.0f);
+
+        draw_sphere(PLAYER_RADIUS, 16, 16);
         glPopMatrix();
     }
+    glDisable(GL_TEXTURE_2D);
+
+    // Draw the projectiles
     for (int i = 0; i < state.num_projectiles; ++i) {
         const ProjectileState& proj = state.projectiles[i];
         if (proj.is_active) {
@@ -398,7 +474,7 @@ void renderGL(const StatePacket& state, uint32_t self_id, float playerX, float p
         }
     }
     draw_pistol();
-    draw_minimap(state, self_id);
+    draw_minimap(state, self_id, playerY);
     draw_crosshair();
 }
 
@@ -449,6 +525,7 @@ int main(int argc, char *argv[]) {
     glfwSetCursorPosCallback(window, mouse_callback);
 
     pistol_texture = load_texture("assets/pistol.png");
+    player_texture = load_texture("assets/player_texture.png");
 
     init_audio();
     ALuint audio_sources[16];
@@ -512,6 +589,12 @@ int main(int argc, char *argv[]) {
             } else {
                 pkt.is_firing = false;
             }
+
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                pkt.is_jumping = true;
+            } else {
+                pkt.is_jumping = false;
+            }
             sendto(sockfd, &pkt, sizeof(pkt), 0, (sockaddr*)&serv_addr, serv_len);
         }
 
@@ -528,23 +611,26 @@ int main(int argc, char *argv[]) {
                 memcpy(&sound_event, &received_state, sizeof(sound_event));
                 
                 int sound_x = (int)sound_event.pos.x;
+                int sound_y = (int)sound_event.pos.y;
                 int sound_z = (int)sound_event.pos.z;
 
-                if (sound_x >= 0 && sound_x < MAP_WIDTH && sound_z >= 0 && sound_z < MAP_LENGTH) {
-                    int path_distance = sound_distance_map[sound_x][sound_z];
-
-                    if (path_distance != -1) {
+                if (sound_x >= 0 && sound_x < MAP_WIDTH && sound_y >= 0 && sound_y < MAP_HEIGHT && sound_z >= 0 && sound_z < MAP_LENGTH) {
+                    float path_cost = sound_distance_map[sound_x][sound_y][sound_z];
+    
+                    if (path_cost < 1000.0f) {
                         ALuint source = audio_sources[next_source];
                         next_source = (next_source + 1) % 16;
                         
-                        float attenuation_factor = 0.15f;
-                        float gain = 1.0f / (1.0f + path_distance * attenuation_factor);
-                        gain = std::max(0.0f, std::min(1.0f, gain));
-
-                        alSourceStop(source); 
+                        float attenuation_factor = 0.1f;
+                        float gain = exp(-path_cost * attenuation_factor);
+                        
+                        alSourceStop(source);
                         alSource3f(source, AL_POSITION, sound_event.pos.x, sound_event.pos.y, sound_event.pos.z);
                         alSourcef(source, AL_GAIN, gain);
                         alSourcei(source, AL_BUFFER, sound_buffers[sound_event.sound_type]);
+                        
+                        alSourcef(source, AL_ROLLOFF_FACTOR, 0.0f);
+                        
                         alSourcePlay(source);
                     }
                 }
@@ -577,7 +663,7 @@ int main(int argc, char *argv[]) {
                 break;
             }
         }
-        calculate_sound_map((int)posX, (int)posZ);
+        calculate_sound_map({posX, posY, posZ});
 
         renderGL(last_valid_state, self_id, posX, posY, posZ);
         glfwSwapBuffers(window);

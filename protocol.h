@@ -7,7 +7,13 @@
 #define MAX_PLAYERS 10
 #define MAX_PROJECTILES 100
 #define MAP_WIDTH 40
+#define MAP_HEIGHT 10
 #define MAP_LENGTH 40
+
+enum VoxelType {
+    AIR = 0,
+    SOLID = 1
+};
 
 enum PacketType {
     JOIN,
@@ -31,14 +37,10 @@ enum MovementDirection : uint8_t {
     NONE = 8
 };
 
-enum TileType : uint8_t {
-    WALL = 0,
-    FLOOR = 1
-};
 
 enum SoundType {
     GUNSHOT,
-    FOOTSTEPS
+    FOOTSTEP
 };
 
 #pragma pack(push, 1)
@@ -62,6 +64,7 @@ struct ActionPacket {
     glm::vec3 view_dir;
     MovementDirection movement_dir;
     uint8_t is_firing;
+    uint8_t is_jumping;
 };
 
 struct PlayerState {
@@ -70,6 +73,7 @@ struct PlayerState {
     glm::vec3 view_dir;
     MovementDirection movement_dir;
     uint8_t is_alive;
+    uint8_t on_ground;
 };
 
 struct ProjectileState {
@@ -89,7 +93,7 @@ struct StatePacket {
 
 struct MapPacket {
     ProtoHeader hdr;
-    int map[MAP_WIDTH][MAP_LENGTH];
+    int map[MAP_WIDTH][MAP_HEIGHT][MAP_LENGTH];
 };
 
 struct SoundEventPacket {
